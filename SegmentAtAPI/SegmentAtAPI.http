@@ -1,0 +1,30 @@
+@SegmentAtAPI_HostAddress = http://localhost:5163/api/v1
+
+GET {{SegmentAtAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
+POST {{SegmentAtAPI_HostAddress}}/fetch
+Content-Type: application/json
+
+{ 
+    "youtubeUrl":"https://www.youtube.com/watch?v=lBnju4glwzI"
+}
+
+###
+POST {{SegmentAtAPI_HostAddress}}/download-segments
+Content-Type: application/json
+
+{
+  "url": "https://www.youtube.com/watch?v=t8n0y-CZ6O8",
+  "selectedQuality": "720p60",
+  "segments": [
+    {
+      "start": "00:00:00",
+      "end": "00:03:00",
+      "name": "Tom Holland video"
+    }
+  ],
+  "outputDirectory": "C:\\Downloads\\segments"
+}
+
