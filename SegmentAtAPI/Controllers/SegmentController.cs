@@ -19,6 +19,9 @@ public class SegmentController : Controller
         this._youtubeDownloader = youtubeDownloader;
     }
 
+    [HttpGet("health")]
+    public IActionResult Health() => Ok();
+
     [Route("fetch")]
     [HttpPost]
     [ProducesResponseType(typeof(ResponseModel<YoutubeVideo>), StatusCodes.Status200OK)]
