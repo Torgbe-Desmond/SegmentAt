@@ -1,21 +1,24 @@
 using SegmentAPI.interfaces;
 using SegmentAPI.Services;
+using SegmentAPI.Extensions;
 
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+string myAllowSpecificOrigins = "_myAllowSpecificOrigins";
 
-// builder.Services.AddOpenApi();
 builder.Services.AddScoped<IYoutubeDownloader, YoutubeDownloader>();
-builder.Services.AddScoped<IYoutubeSegmentDownloader, YoutubeSegmentDownloader>();
+builder.Services.RegisterCors(myAllowSpecificOrigins);
+
 builder.Services.AddControllers();
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
+app.UseMiddleware<ExceptionMiddleware>();
 app.MapControllers();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
-
+app.UseCors(myAllowSpecificOrigins);
 app.Run();
 

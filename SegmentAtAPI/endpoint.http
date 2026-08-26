@@ -1,7 +1,0 @@
-###
-POST  http://localhost:5163
-Content-Type: application/json
-
-{ 
-    "youtubeUrl":"https://www.youtube.com/watch?v=x0725PDUho8"
-}
