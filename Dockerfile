@@ -2,7 +2,7 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY SegmentAtAPI.csproj .
+COPY SegmentAtAPI/SegmentAtAPI.csproj .
 RUN dotnet restore
 
 COPY . .
@@ -25,4 +25,4 @@ COPY --from=build /app/publish .
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
 
-ENTRYPOINT ["dotnet", "FastTransfers.Api.dll"]
+ENTRYPOINT ["dotnet", "SegmentAtAPI.Api.dll"]
