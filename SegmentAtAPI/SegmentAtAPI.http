@@ -1,4 +1,4 @@
-@SegmentAtAPI_HostAddress = http://localhost:5163/api/v1
+@SegmentAtAPI_HostAddress = https://segmentat.onrender.com/api/v1
 @youtubeUrl = "https://www.youtube.com/watch?v=keS8ZPaBZsI"
 
 GET {{SegmentAtAPI_HostAddress}}/weatherforecast/

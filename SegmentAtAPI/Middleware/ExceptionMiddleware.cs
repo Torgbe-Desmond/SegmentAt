@@ -36,8 +36,9 @@ public class ExceptionMiddleware
         }
         catch (Exception ex)
         {
+            string message = ex.InnerException?.Message ?? ex.Message;
             _logger.LogError(ex, "Unhandled exception on {Path}", context.Request.Path);
-            await WriteAsync(context, 500, new { message = "Internal server error" });
+            await WriteAsync(context, 500, new { message });
         }
     }
 
