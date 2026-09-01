@@ -32,8 +32,6 @@ public class SegmentsDownloadResult
 {
     public List<DownloadResult> Segments { get; set; } = new();
     public string VideoTitle { get; set; } = string.Empty;
-
-    // public virtual DownloadResult downloadResult {get;set; }
 }
 
 public class VideoSegment
@@ -62,11 +60,8 @@ public class FetchVideoRequest
 public class DownloadSegmentStreamRequest
 {
     public string Url { get; set; } = string.Empty;
-
     public string SelectedQuality { get; set; } = string.Empty;
-
     public string Container { get; set; } = string.Empty;
-
     public List<VideoSegment> Segments { get; set; } = new();
 
 }
@@ -74,20 +69,15 @@ public class DownloadSegmentStreamRequest
 public class DownloadStreamRequest
 {
     public string Url { get; set; } = string.Empty;
-
     public string SelectedQuality { get; set; } = string.Empty;
-
     public string Container { get; set; } = string.Empty;
 }
 
 public class DownloadSegmentsRequest
 {
     public string Url { get; set; } = string.Empty;
-
     public string SelectedQuality { get; set; } = string.Empty;
-
     public string Container { get; set; } = string.Empty;
-
     public List<VideoSegment> Segments { get; set; } = new();
 }
 

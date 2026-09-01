@@ -118,8 +118,9 @@ public class YoutubeDownloader : IYoutubeDownloader
     }
 
     public async Task<DownloadResult> DownloadToWebStreamAsync(
-    DownloadStreamRequest downloadStreamRequest,
-    CancellationToken cancellationToken = default)
+        DownloadStreamRequest downloadStreamRequest,
+        IProgress<double>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         StreamManifest? streamManifest = await _youtube.Videos.Streams.GetManifestAsync(downloadStreamRequest.Url, cancellationToken);
 
@@ -141,11 +142,14 @@ public class YoutubeDownloader : IYoutubeDownloader
             AudioStreamInfo = audioStreamInfo
         };
 
-        return await ProcessVideo(videoRequest, cancellationToken);
+        return await ProcessVideo(videoRequest, progress, cancellationToken);
     }
 
 
-    public async Task<SegmentsDownloadResult> DownloadSegmentsAsync(DownloadSegmentsRequest request, CancellationToken cancellationToken = default)
+    public async Task<SegmentsDownloadResult> DownloadSegmentsAsync(
+        DownloadSegmentsRequest request,
+        IProgress<SegmentProgress>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         if (request.Segments.Count == 0)
         {
@@ -178,7 +182,7 @@ public class YoutubeDownloader : IYoutubeDownloader
 
         YoutubeExplode.Videos.Video video = await _youtube.Videos.GetAsync(request.Url, cancellationToken);
 
-        List<DownloadResult> downloadResult = await ProcessVideoList(audioStreamInfo, videoStreamInfo, request, video, cancellationToken);
+        List<DownloadResult> downloadResult = await ProcessVideoList(audioStreamInfo, videoStreamInfo, request, video, progress, cancellationToken);
 
         return new SegmentsDownloadResult
         {
@@ -188,6 +192,16 @@ public class YoutubeDownloader : IYoutubeDownloader
 
     }
 
+    /// <summary>
+    /// Cuts one segment with ffmpeg, reporting live progress as it runs.
+    ///
+    /// -progress pipe:1 makes ffmpeg emit machine-readable "key=value" lines
+    /// to stdout as it works (out_time_us, frame, speed, ...) instead of
+    /// only the human-readable log on stderr. We read those lines as they
+    /// arrive and compute a 0..1 fraction from out_time_us against this
+    /// segment's known duration, instead of only finding out once ffmpeg
+    /// exits.
+    /// </summary>
     private async Task<SegmentStatusResult> CutSegmentFromStreamAsync(
        string videoUrl,
        string audioUrl,
@@ -195,6 +209,7 @@ public class YoutubeDownloader : IYoutubeDownloader
        string outputPath,
        TimeSpan start,
        TimeSpan end,
+       IProgress<double>? segmentProgress,
        CancellationToken cancellationToken)
     {
         try
@@ -202,6 +217,7 @@ public class YoutubeDownloader : IYoutubeDownloader
             TimeSpan duration = end - start;
             string startArg = start.ToString(@"hh\:mm\:ss\.fff");
             string durationArg = duration.ToString(@"hh\:mm\:ss\.fff");
+            double durationUs = duration.TotalMilliseconds * 1000.0;
 
             string args =
                 $"-ss {startArg} -i \"{videoUrl}\" " +
@@ -209,7 +225,9 @@ public class YoutubeDownloader : IYoutubeDownloader
                 $"-map 0:v -map 1:a " +
                 $"-t {durationArg} " +
                 $"-c:v libx264 -b:v {videoBitrateBps} -maxrate {videoBitrateBps} -bufsize {videoBitrateBps * 2} " +
-                $"-c:a aac -b:a 128k -preset veryfast -y \"{outputPath}\"";
+                $"-c:a aac -b:a 128k -preset veryfast " +
+                $"-progress pipe:1 " +
+                $"-y \"{outputPath}\"";
 
             ProcessStartInfo psi = new ProcessStartInfo
             {
@@ -225,8 +243,12 @@ public class YoutubeDownloader : IYoutubeDownloader
             if (process == null)
                 throw new BadRequestException("Failed to start ffmpeg process.");
 
-            Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+            // stderr still just accumulates for error reporting if ffmpeg
+            // fails — unchanged from before. stdout, now carrying progress
+            // lines instead of being silent until exit, is read line-by-line
+            // concurrently so a large stderr buffer can't deadlock it.
             Task<string> stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+            Task stdoutTask = ReadProgressStreamAsync(process.StandardOutput, durationUs, segmentProgress, cancellationToken);
 
             await Task.WhenAll(stdoutTask, stderrTask);
             await process.WaitForExitAsync(cancellationToken);
@@ -236,6 +258,10 @@ public class YoutubeDownloader : IYoutubeDownloader
                 string stderr = await stderrTask;
                 throw new BadRequestException($"ffmpeg failed: {stderr}");
             }
+
+            // Guarantee a clean 100% for this segment even if the last
+            // progress line ffmpeg emitted landed slightly under 1.0.
+            segmentProgress?.Report(1.0);
 
             return new SegmentStatusResult(true, null);
         }
@@ -259,7 +285,49 @@ public class YoutubeDownloader : IYoutubeDownloader
         }
     }
 
-    private async Task<DownloadResult> ProcessVideo(ProcessVideoRequest videoRequest, CancellationToken ct = default)
+    /// <summary>
+    /// Reads ffmpeg's -progress output (one "key=value" pair per line) as
+    /// it's produced and reports a 0..1 fraction based on out_time_us.
+    ///
+    /// Note: ffmpeg's older `out_time_ms` field is actually microseconds
+    /// despite the name (a long-standing ffmpeg quirk) — we deliberately use
+    /// `out_time_us` instead, which is unambiguous, to avoid that trap.
+    /// </summary>
+    private static async Task ReadProgressStreamAsync(
+        StreamReader stdout,
+        double durationUs,
+        IProgress<double>? segmentProgress,
+        CancellationToken cancellationToken)
+    {
+        if (segmentProgress == null || durationUs <= 0)
+        {
+            // Still need to drain stdout even with nothing to report to,
+            // otherwise ffmpeg can block on a full stdout buffer.
+            await stdout.ReadToEndAsync(cancellationToken);
+            return;
+        }
+
+        string? line;
+        while ((line = await stdout.ReadLineAsync(cancellationToken)) != null)
+        {
+            int eq = line.IndexOf('=');
+            if (eq <= 0) continue;
+
+            string key = line[..eq];
+            string value = line[(eq + 1)..];
+
+            if (key == "out_time_us" && long.TryParse(value, out long outTimeUs))
+            {
+                double fraction = outTimeUs / durationUs;
+                segmentProgress.Report(Math.Clamp(fraction, 0.0, 1.0));
+            }
+        }
+    }
+
+    private async Task<DownloadResult> ProcessVideo(
+        ProcessVideoRequest videoRequest,
+        IProgress<double>? progress,
+        CancellationToken ct = default)
     {
         YoutubeExplode.Videos.Video video = await _youtube.Videos.GetAsync(videoRequest.Url, ct);
 
@@ -272,7 +340,7 @@ public class YoutubeDownloader : IYoutubeDownloader
         await _youtube.Videos.DownloadAsync(
             new IStreamInfo[] { videoRequest.VideoStreamInfo, videoRequest.AudioStreamInfo },
             new ConversionRequestBuilder(tempPath).Build(),
-            null,
+            progress,
             ct
         );
 
@@ -290,11 +358,13 @@ public class YoutubeDownloader : IYoutubeDownloader
         IVideoStreamInfo videoStreamInfo,
         DownloadSegmentsRequest downloadSegmentsRequest,
         YoutubeExplode.Videos.Video video,
+        IProgress<SegmentProgress>? progress,
         CancellationToken ct = default
         )
     {
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         List<DownloadResult> results = new List<DownloadResult>();
+        int total = downloadSegmentsRequest.Segments.Count;
 
         try
         {
@@ -311,6 +381,20 @@ public class YoutubeDownloader : IYoutubeDownloader
                 string fileName = $"{safeName}.{downloadSegmentsRequest.Container}";
                 string tempPath = Path.Combine(Path.GetTempPath(), fileName);
 
+                // How many segments were already fully done before this one
+                // started — the fixed part of the overall fraction.
+                int completedBefore = results.Count;
+
+                // Live, within-segment progress. Fires continuously while
+                // ffmpeg cuts this segment, not just once it exits.
+                IProgress<double>? segmentProgress = progress == null
+                    ? null
+                    : new Progress<double>(fraction =>
+                    {
+                        double overall = (completedBefore + fraction) / total;
+                        progress.Report(new SegmentProgress(completedBefore, total, safeName, overall));
+                    });
+
                 SegmentStatusResult cutResult = await CutSegmentFromStreamAsync(
                     videoStreamInfo.Url,
                     audioStreamInfo.Url,
@@ -318,6 +402,7 @@ public class YoutubeDownloader : IYoutubeDownloader
                     tempPath,
                     seg.Start,
                     seg.End,
+                    segmentProgress,
                     ct);
 
                 Stream tempFileStream = new FileStream(tempPath, FileMode.Open, FileAccess.Read, FileShare.None, 4096, FileOptions.DeleteOnClose);
@@ -327,6 +412,11 @@ public class YoutubeDownloader : IYoutubeDownloader
                     FileStream = tempFileStream,
                     FileName = fileName
                 });
+
+                // Clean checkpoint at the segment boundary itself, so the
+                // client always sees an exact "N of Total done" moment even
+                // if in-flight reporting above was choppy.
+                progress?.Report(new SegmentProgress(results.Count, total, safeName, (double)results.Count / total));
             }
 
             return results;

@@ -6,6 +6,7 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 string myAllowSpecificOrigins = "_myAllowSpecificOrigins";
 
 builder.Services.AddScoped<IYoutubeDownloader, YoutubeDownloader>();
+builder.Services.AddSingleton<JobManager>();
 builder.Services.RegisterCors(myAllowSpecificOrigins);
 
 builder.Services.AddControllers();
@@ -13,12 +14,19 @@ builder.Services.AddControllers();
 WebApplication app = builder.Build();
 
 app.UseMiddleware<ExceptionMiddleware>();
+
+// app.UseDefaultFiles();
+// app.UseStaticFiles();
+
 app.MapControllers();
 
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
-app.UseCors(myAllowSpecificOrigins);
-app.Run();
 
+app.UseCors(myAllowSpecificOrigins);
+
+// app.MapFallbackToFile("index.html");
+
+app.Run();
