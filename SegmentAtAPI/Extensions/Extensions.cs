@@ -1,3 +1,4 @@
+using System.Net;
 using SegmentAPI.Models;
 using YoutubeExplode.Videos.Streams;
 namespace SegmentAPI.Extensions;
@@ -24,7 +25,6 @@ public static class Extensions
 
     public static IVideoStreamInfo? ProcessVideoStream(this StreamManifest streamManifest, string selectedQuality)
     {
-
         IVideoStreamInfo? videoStreamInfo = streamManifest
             .GetVideoStreams()
             .Where(s => s.VideoQuality.Label == selectedQuality)

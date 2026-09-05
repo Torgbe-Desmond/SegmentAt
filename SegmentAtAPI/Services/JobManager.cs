@@ -18,12 +18,12 @@ public class JobManager
 
     public DownloadJob Create()
     {
-        var job = new DownloadJob();
+        DownloadJob job = new DownloadJob();
         _jobs[job.Id] = job;
         return job;
     }
 
-    public DownloadJob? Get(Guid id) => _jobs.TryGetValue(id, out var job) ? job : null;
+    public DownloadJob? Get(Guid id) => _jobs.TryGetValue(id, out DownloadJob? job) ? job : null;
 
     public void Remove(Guid id) => _jobs.TryRemove(id, out _);
 

@@ -17,27 +17,28 @@ public class YoutubeDownloader : IYoutubeDownloader
     private readonly YoutubeClient _youtube;
     private readonly int _maxHeight;
 
-    public YoutubeDownloader(IConfiguration configuration, int maxHeight = 1080)
+    public YoutubeDownloader(IHttpClientFactory httpClientFactory, IConfiguration configuration, int maxHeight = 1080)
     {
         _maxHeight = maxHeight;
 
         string? cookiesPath = configuration["Youtube:CookiesPath"];
+        var httpClient = httpClientFactory.CreateClient("YoutubeProxyClient");
 
         if (string.IsNullOrWhiteSpace(cookiesPath))
         {
             Console.WriteLine("[YoutubeDownloader] No Youtube:CookiesPath configured — running unauthenticated.");
-            _youtube = new YoutubeClient();
+            _youtube = new YoutubeClient(httpClient);
         }
         else if (!File.Exists(cookiesPath))
         {
             Console.WriteLine($"[YoutubeDownloader] Cookie file not found at '{Path.GetFullPath(cookiesPath)}' — running unauthenticated.");
-            _youtube = new YoutubeClient();
+            _youtube = new YoutubeClient(httpClient);
         }
         else
         {
             List<Cookie> cookies = CookieLoader.LoadFromNetscapeFile(cookiesPath);
             Console.WriteLine($"[YoutubeDownloader] Loaded {cookies.Count} cookies from '{cookiesPath}'.");
-            _youtube = new YoutubeClient(cookies);
+            _youtube = new YoutubeClient(httpClient, cookies);
         }
     }
 

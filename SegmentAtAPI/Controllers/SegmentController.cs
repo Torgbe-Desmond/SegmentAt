@@ -426,7 +426,7 @@ public class SegmentController : Controller
 
         Response.ContentType = "text/event-stream";
         Response.Headers["Cache-Control"] = "no-cache";
-        Response.Headers["X-Accel-Buffering"] = "no"; // in case this ever sits behind nginx
+        Response.Headers["X-Accel-Buffering"] = "no";
 
         // Replay whatever was last actually emitted, so a client that
         // subscribes late (or reconnects) isn't stuck at nothing until the
