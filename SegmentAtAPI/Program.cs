@@ -7,6 +7,10 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 string myAllowSpecificOrigins = "_myAllowSpecificOrigins";
 
 builder.Services.AddHttpClient("YoutubeProxyClient")
+   .ConfigureHttpClient(client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(180);
+    })
     .ConfigurePrimaryHttpMessageHandler(() =>
     {
         var proxyHost = builder.Configuration["Proxy:Host"];
